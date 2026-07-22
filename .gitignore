@@ -7,7 +7,7 @@ __pycache__/
 .env.*
 *.log
 uv.lock
+docker/embedding/
 
-docker/embedding/bge-large-zh-v1.5/*.bin
-docker/embedding/bge-large-zh-v1.5/*.txt
+
 docker/elasticsearch/plugins/*.zip
