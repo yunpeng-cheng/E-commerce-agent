@@ -18,6 +18,19 @@ from tenacity import (
     wait_random_exponential,
 )
 
+# MySQL 相关异常
+from sqlalchemy.exc import OperationalError, TimeoutError as SQLTimeoutError
+from asyncmy.errors import OperationalError as AsyncmyOperationalError
+
+# Qdrant/HTTP 相关异常
+import httpx
+
+# Elasticsearch 相关异常
+from elasticsearch import exceptions as es_exceptions
+
+# Embedding 相关异常
+import aiohttp
+
 from app.core.log import logger
 
 # 定义类型变量
@@ -111,9 +124,17 @@ def async_retry_on_exception(
 # 预定义的重试装饰器
 
 # MySQL 重试装饰器
+# 只重试临时的连接问题和超时，不重试业务逻辑错误（如数据校验失败）
 async_mysql_retry = async_retry_on_exception(
     exceptions=(
-        Exception,  # SQLAlchemy 异常和 asyncmy 异常
+        # SQLAlchemy 层面的异常
+        OperationalError,
+        SQLTimeoutError,
+        # asyncmy 驱动层面的异常
+        AsyncmyOperationalError,
+        # 网络层异常
+        ConnectionResetError,
+        ConnectionRefusedError,
     ),
     max_attempts=3,
     min_wait=1,
@@ -121,24 +142,61 @@ async_mysql_retry = async_retry_on_exception(
 )
 
 # Qdrant 重试装饰器
+# 只重试网络层面的问题，不重试业务逻辑错误
 async_qdrant_retry = async_retry_on_exception(
-    exceptions=(Exception,),
+    exceptions=(
+        # HTTP 层面的异常
+        httpx.TimeoutException,
+        httpx.ConnectError,
+        httpx.ConnectTimeout,
+        httpx.ReadTimeout,
+        httpx.WriteTimeout,
+        # 网络层异常
+        ConnectionResetError,
+        ConnectionRefusedError,
+        # Qdrant 客户端异常
+        httpx.HTTPStatusError,  # 5xx 错误会被重试
+    ),
     max_attempts=3,
     min_wait=1,
     max_wait=5,
 )
 
 # Elasticsearch 重试装饰器
+# 只重试临时的连接问题和超时
 async_es_retry = async_retry_on_exception(
-    exceptions=(Exception,),
+    exceptions=(
+        # ES 连接异常
+        es_exceptions.ConnectionError,
+        es_exceptions.ConnectionTimeout,
+        # ES 服务器异常（5xx）
+        es_exceptions.TransportError,
+        # 网络层异常
+        ConnectionResetError,
+        ConnectionRefusedError,
+    ),
     max_attempts=3,
     min_wait=1,
     max_wait=5,
 )
 
 # Embedding 重试装饰器
+# Embedding 服务通常较耗时，重试间隔可以稍长
 async_embedding_retry = async_retry_on_exception(
-    exceptions=(Exception,),
+    exceptions=(
+        # aiohttp 层面的异常
+        aiohttp.ClientTimeout,
+        aiohttp.ClientConnectionError,
+        aiohttp.ClientError,
+        # HTTP 层面的异常
+        httpx.TimeoutException,
+        httpx.ConnectError,
+        httpx.ConnectTimeout,
+        httpx.ReadTimeout,
+        # 网络层异常
+        ConnectionResetError,
+        ConnectionRefusedError,
+    ),
     max_attempts=3,
     min_wait=2,
     max_wait=10,
