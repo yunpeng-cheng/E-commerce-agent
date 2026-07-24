@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from dataclasses import asdict
 from pathlib import Path
@@ -47,12 +48,12 @@ class MetaKnowledgeService:
     async def _save_tables_to_meta_db(
         self, meta_config: MetaConfig
     ) -> list[ColumnInfo]:
-        """把配置里的表字段信息补齐后写入 Meta MySQL"""
+        """把配置里的表字段信息补齐后写入 Meta MySQL（并行优化版）"""
         table_infos: list[TableInfo] = []
         column_infos: list[ColumnInfo] = []
 
+        # 步骤1：先创建所有表的 TableInfo 对象（纯内存操作，无需并行）
         for table in meta_config.tables:
-            # 先把配置里的表定义整理成业务实体，后面统一交给 Meta Repository 落库
             table_info = TableInfo(
                 id=table.name,
                 name=table.name,
@@ -61,15 +62,35 @@ class MetaKnowledgeService:
             )
             table_infos.append(table_info)
 
-            # 字段类型属于数仓里的真实信息，所以这里仍然要回到 DW 查询
-            column_types = await self.dw_mysql_repository.get_column_types(table.name)
+        # 步骤2：并行查询所有表的字段类型信息
+        async def fetch_column_types(table):
+            """为单个表获取字段类型"""
+            return table.name, await self.dw_mysql_repository.get_column_types(table.name)
 
+        table_column_types_tasks = [fetch_column_types(table) for table in meta_config.tables]
+        table_column_types_results = await asyncio.gather(*table_column_types_tasks)
+        table_column_types_map = {name: types for name, types in table_column_types_results}
+
+        # 步骤3：并行查询所有字段的示例值
+        async def fetch_column_values(table, column):
+            """为单个字段获取示例值"""
+            return table.name, column.name, await self.dw_mysql_repository.get_column_values(
+                table.name, column.name
+            )
+
+        column_value_tasks = []
+        for table in meta_config.tables:
             for column in table.columns:
-                # 这里只拿少量示例值，目的是让字段元数据更容易被人和模型理解
-                column_values = await self.dw_mysql_repository.get_column_values(
-                    table.name, column.name
-                )
-                # 字段 id 使用 table.column 形式，后续在向量索引和全文索引里都会复用
+                column_value_tasks.append(fetch_column_values(table, column))
+
+        column_value_results = await asyncio.gather(*column_value_tasks)
+        column_values_map = {(table_name, col_name): values for table_name, col_name, values in column_value_results}
+
+        # 步骤4：组装 ColumnInfo 对象（纯内存操作，无需并行）
+        for table in meta_config.tables:
+            column_types = table_column_types_map[table.name]
+            for column in table.columns:
+                column_values = column_values_map[(table.name, column.name)]
                 column_info = ColumnInfo(
                     id=f"{table.name}.{column.name}",
                     name=column.name,
