@@ -83,8 +83,8 @@ class MetaKnowledgeService:
                 column_infos.append(column_info)
 
         async with self.meta_mysql_repository.session.begin():
-            self.meta_mysql_repository.save_table_infos(table_infos)
-            self.meta_mysql_repository.save_column_infos(column_infos)
+            await self.meta_mysql_repository.save_table_infos(table_infos)
+            await self.meta_mysql_repository.save_column_infos(column_infos)
 
         return column_infos
 
@@ -195,8 +195,8 @@ class MetaKnowledgeService:
 
         # 指标本身和字段关系要放在同一笔事务里，避免只写入其中一部分
         async with self.meta_mysql_repository.session.begin():
-            self.meta_mysql_repository.save_metric_infos(metric_infos)
-            self.meta_mysql_repository.save_column_metrics(column_metrics)
+            await self.meta_mysql_repository.save_metric_infos(metric_infos)
+            await self.meta_mysql_repository.save_column_metrics(column_metrics)
 
         return metric_infos
 

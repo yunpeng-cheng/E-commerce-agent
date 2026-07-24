@@ -12,33 +12,33 @@ logging:
 db_meta:
   host: localhost
   port: 3306
-  user: peng
-  password: pr131499
+  user: root
+  password: 123456
   database: meta
 
 db_dw:
   host: localhost
   port: 3306
-  user: peng
-  password: pr131499
+  user: root
+  password: 123456
   database: dw
 
 qdrant:
-  host: localhost
+  host: 127.0.0.1
   port: 6333
   embedding_size: 1024
 
 embedding:
-  host: localhost
+  host: 127.0.0.1
   port: 8081
   model: BAAI/bge-large-zh-v1.5
 
 es:
-  host: localhost
+  host: 127.0.0.1
   port: 9200
   index_name: data_agent
 
 llm:
-  model_name: Pro/zai-org/GLM-5.1
+  model_name: qwen3.7-max
   api_key: ${oc.env:LLM_API_KEY}
-  base_url: https://api.siliconflow.cn/v1
+  base_url: https://dashscope.aliyuncs.com/compatible-mode/v1

@@ -1,121 +1,95 @@
 """
-Elasticsearch 客户端管理器
+Qdrant 客户端管理器
 
-统一创建和管理 Elasticsearch 异步客户端，
-主要服务于字段真实取值的全文索引构建和检索
+统一创建和管理 Qdrant 异步客户端
+主要用于保存字段和指标的向量索引，支撑后续问数流程中的语义召回
 """
 
 import asyncio
+import random
 from typing import Optional
 
-from elasticsearch import AsyncElasticsearch
+from qdrant_client import AsyncQdrantClient, models
 
-from app.conf.app_config import ESConfig, app_config
+from app.conf.app_config import QdrantConfig, app_config
 
 
-class ESClientManager:
-    """管理 Elasticsearch 客户端的生命周期"""
+class QdrantClientManager:
+    """管理 Qdrant 客户端的初始化与关闭"""
 
-    def __init__(self, es_config: ESConfig):
-        # 保存 ES 配置对象，后面初始化客户端时会从这里读取 host 和 port
-        self.es_config = es_config
+    def __init__(self, qdrant_config: QdrantConfig):
+        # 保存配置对象，后面初始化客户端时要从这里读取 host 和 port
+        self.qdrant_config = qdrant_config
         # 先把 client 声明出来，真正初始化放到 init() 中进行
-        self.client: Optional[AsyncElasticsearch] = None
+        self.client: Optional[AsyncQdrantClient] = None
 
     def _get_url(self) -> str:
-        """拼接 Elasticsearch 服务地址"""
-        return f"http://{self.es_config.host}:{self.es_config.port}"
+        """拼接 Qdrant 服务地址"""
+        return f"http://{self.qdrant_config.host}:{self.qdrant_config.port}"
 
     def init(self):
         """
-        初始化异步 Elasticsearch 客户端
-        hosts 之所以是列表，是为了兼容 ES 常见的集群连接方式
+        显式初始化 Qdrant 客户端
+        这里不在 __init__ 中直接初始化，是为了和项目的生命周期管理保持一致
         """
-        self.client = AsyncElasticsearch(hosts=[self._get_url()])
+        self.client = AsyncQdrantClient(
+            url=self._get_url(),
+            timeout=120,
+            check_compatibility=False,
+        )
 
     async def close(self):
-        """关闭客户端连接"""
+        """关闭 Qdrant 客户端连接"""
         await self.client.close()
 
 
-# 创建一个全局可复用的 ES 客户端管理器对象
-es_client_manager = ESClientManager(app_config.es)
+# 创建一个全局的管理器对象
+# 后续项目中的其他模块都通过它来获取同一套 Qdrant 客户端
+qdrant_client_manager = QdrantClientManager(app_config.qdrant)
+
 
 if __name__ == "__main__":
-    es_client_manager.init()
+    # 先初始化客户端，后面的测试逻辑才能真正访问 Qdrant
+    qdrant_client_manager.init()
 
     async def test():
-        """执行一次索引创建、写入与查询，验证 ES 接入链路"""
-        client = es_client_manager.client
+        """执行一次集合创建、写入和查询，验证 Qdrant 接入链路"""
+        client = qdrant_client_manager.client
+        # 如果集合不存在，就先创建一个集合
+        if not await client.collection_exists("my_collection"):
+            await client.create_collection(
+                collection_name="my_collection",
+                vectors_config=models.VectorParams(
+                    # 当前集合中的向量维度是 10
+                    size=10,
+                    # 使用余弦相似度作为距离计算方式
+                    distance=models.Distance.COSINE,
+                ),
+            )
 
-        try:
-            # 创建索引（已存在则跳过，避免重复执行脚本时报 resource_already_exists）
-            # 这里同时显式定义了字段结构
-            # dynamic=False 表示关闭动态映射，要求写入数据必须符合当前定义
-            if not await client.indices.exists(index="my-books"):
-                await client.indices.create(
-                    index="my-books",
-                    mappings={
-                        "dynamic": False,
-                        "properties": {
-                            "name": {"type": "text"},
-                            "author": {"type": "text"},
-                            "release_date": {"type": "date", "format": "yyyy-MM-dd"},
-                            "page_count": {"type": "integer"},
-                        },
-                    },
+        # 向集合中写入 100 个随机 point
+        # 每个 point 都有一个 id 和一个 10 维向量
+        await client.upsert(
+            collection_name="my_collection",
+            points=[
+                models.PointStruct(
+                    id=i,
+                    vector=[random.random() for _ in range(10)],
                 )
-            # 插入数据
-            # bulk 采用“操作说明 + 数据本体”交替出现的格式
-            # 适合一次性写入多条文档
-            await client.bulk(
-                operations=[
-                    {"index": {"_index": "my-books"}},
-                    {
-                        "name": "Revelation Space",
-                        "author": "Alastair Reynolds",
-                        "release_date": "2000-03-15",
-                        "page_count": 585,
-                    },
-                    {"index": {"_index": "my-books"}},
-                    {
-                        "name": "1984",
-                        "author": "George Orwell",
-                        "release_date": "1985-06-01",
-                        "page_count": 328,
-                    },
-                    {"index": {"_index": "my-books"}},
-                    {
-                        "name": "Fahrenheit 451",
-                        "author": "Ray Bradbury",
-                        "release_date": "1953-10-15",
-                        "page_count": 227,
-                    },
-                    {"index": {"_index": "my-books"}},
-                    {
-                        "name": "Brave New World",
-                        "author": "Aldous Huxley",
-                        "release_date": "1932-06-01",
-                        "page_count": 268,
-                    },
-                    {"index": {"_index": "my-books"}},
-                    {
-                        "name": "The Handmaids Tale",
-                        "author": "Margaret Atwood",
-                        "release_date": "1985-06-01",
-                        "page_count": 311,
-                    },
-                ],
-            )
+                for i in range(100)
+            ],
+        )
 
-            resp = await client.search(
-                index="my-books",
-                query={"match": {"name": "brave"}},
-            )
+        # 用一个随机生成的查询向量做相似度检索
+        # limit=10 表示最多返回 10 条结果
+        # score_threshold=0.8 表示只保留分数不低于 0.8 的结果
+        res = await client.query_points(
+            collection_name="my_collection",
+            query=[random.random() for _ in range(10)],  # type: ignore
+            limit=10,
+            score_threshold=0.8,
+        )
 
-            print(resp)
-        finally:
-            # 成功或异常都关闭连接，避免 aiohttp ClientSession 未关闭告警
-            await es_client_manager.close()
+        print(res)
 
     asyncio.run(test())

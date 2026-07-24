@@ -1,19 +1,20 @@
 services:
-  mysql:
-    image: mysql:8.0
-    container_name: mysql
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: pr131499
-      MYSQL_USER: peng
-      MYSQL_PASSWORD: pr131499
-    ports:
-      - "3307:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-      - ./mysql:/docker-entrypoint-initdb.d
-    command: --character-set-server=utf8mb4
-      --collation-server=utf8mb4_general_ci
+  # MySQL 已改为本地运行，端口 3306
+  # mysql:
+  #   image: mysql:8.0
+  #   container_name: mysql
+  #   restart: unless-stopped
+  #   environment:
+  #     MYSQL_ROOT_PASSWORD: pr131499
+  #     MYSQL_USER: peng
+  #     MYSQL_PASSWORD: pr131499
+  #   ports:
+  #     - "3308:3306"
+  #   volumes:
+  #     - mysql_data:/var/lib/mysql
+  #     - ./mysql:/docker-entrypoint-initdb.d
+  #   command: --character-set-server=utf8mb4
+  #     --collation-server=utf8mb4_general_ci
 
   elasticsearch:
     build: ./elasticsearch

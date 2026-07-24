@@ -1,6 +1,8 @@
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.retry import async_mysql_retry
+
 
 class DWMySQLRepository:
     """负责查询数仓真实表结构和字段样例值"""
@@ -8,6 +10,7 @@ class DWMySQLRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
+    @async_mysql_retry
     async def get_column_types(self, table_name: str) -> dict[str, str]:
         """查询整张表的字段类型，作为 ColumnInfo.type 的真实来源"""
         sql = f"show columns from {table_name}"
@@ -15,6 +18,7 @@ class DWMySQLRepository:
         result_dict = result.mappings().fetchall()
         return {row["Field"]: row["Type"] for row in result_dict}
 
+    @async_mysql_retry
     async def get_column_values(
         self, table_name: str, column_name: str, limit: int = 10
     ) -> list:
@@ -23,6 +27,7 @@ class DWMySQLRepository:
         result = await self.session.execute(text(sql))
         return [row[0] for row in result.fetchall()]
 
+    @async_mysql_retry
     async def get_db_info(self):
         """读取当前数仓数据库的方言和版本，供 SQL 生成提示词使用"""
 
@@ -34,11 +39,13 @@ class DWMySQLRepository:
         dialect = self.session.bind.dialect.name
         return {"dialect": dialect, "version": version}
 
+    @async_mysql_retry
     async def validate(self, sql: str):
         """用 EXPLAIN 让数据库提前解析 SQL，发现语法 表名 字段名等错误"""
         sql = f"explain {sql}"
         await self.session.execute(text(sql))
 
+    @async_mysql_retry
     async def run(self, sql: str) -> list[dict]:
         """执行最终 SQL，并把 SQLAlchemy 行对象转换成前端更易消费的字典列表"""
         result = await self.session.execute(text(sql))
