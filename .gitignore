@@ -11,3 +11,4 @@ docker/embedding/
 
 
 docker/elasticsearch/plugins/*.zip
+frontend\Vue3 + Vite + TS 项目开发规范.md
